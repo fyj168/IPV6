@@ -11,6 +11,9 @@ jobs:
       - name: Set up Docker
         uses: docker/setup-buildx-action@v3
       
+      - name: Create output directory
+        run: mkdir -p ./output
+      
       - name: Pull Docker image
         run: docker pull kakaxi088/zubo:v3.2.0
       
@@ -18,4 +21,12 @@ jobs:
         run: |
           docker run \
             --name zubo-container \
-            kakaxi088/zubo:v3.2.0
+            -v $(pwd)/output:/output \
+            kakaxi088/zubo:v3.2.0 \
+            sh -c "echo '容器执行完成' > /output/result.txt && echo '生成时间: $(date)' >> /output/result.txt"
+      
+      - name: Check generated file
+        run: |
+          echo "生成的文件内容："
+          cat ./output/result.txt
+          ls -la ./output/
