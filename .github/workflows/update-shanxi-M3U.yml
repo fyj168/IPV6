@@ -1,0 +1,164 @@
+name: Update Shanxi M3U
+
+on:
+  schedule:
+    - cron: '0 */12 * * *'
+  workflow_dispatch:
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Setup
+      run: |
+        apt-get update
+        pip3 install requests
+        
+    - name: Create and run script
+      run: |
+        # 创建单独的Python文件，避免YAML多行字符串问题
+        cat > /tmp/update.py << "PY_EOF"
+import requests
+import re
+from datetime import datetime
+
+url = "https://my9.ltd/tvsh/"
+print("Starting update...")
+
+try:
+    headers = {"User-Agent": "Mozilla/5.0"}
+    r = requests.get(url, headers=headers, timeout=15)
+    
+    if r.status_code == 200:
+        print(f"Page fetched, size: {len(r.text)} chars")
+        
+        # Find links
+        links = []
+        for ext in ['.m3u', '.txt']:
+            pattern = f'href="([^"]+\\{ext}[^"]*)"'
+            found = re.findall(pattern, r.text, re.I)
+            links.extend(found)
+        
+        print(f"Found {len(links)} links")
+        
+        # Filter Shanxi links
+        shanxi_links = []
+        keywords = ['shanxi', '山西', 'sx']
+        for link in links:
+            if any(kw in link.lower() for kw in keywords):
+                shanxi_links.append(link)
+        
+        if not shanxi_links:
+            shanxi_links = links[:3]
+        
+        # Build content
+        content = [
+            "#EXTM3U",
+            f"# Updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            f"# Source: {url}",
+            ""
+        ]
+        
+        # Process links
+        for i, link in enumerate(shanxi_links[:3]):
+            try:
+                if link.startswith('http'):
+                    full_url = link
+                elif link.startswith('/'):
+                    full_url = f"https://my9.ltd{link}"
+                else:
+                    full_url = f"{url}{link}"
+                
+                print(f"Downloading {i+1}/{len(shanxi_links)}: {full_url}")
+                r2 = requests.get(full_url, timeout=10)
+                
+                if r.status_code == 200:
+                    for line in r2.text.split('\\n'):
+                        line = line.strip()
+                        if line and not line.startswith('#EXTM3U'):
+                            content.append(line)
+                    content.append("")
+            except Exception as e:
+                print(f"Error: {e}")
+        
+        # Save file
+        with open('shanxi-multicast.m3u', 'w', encoding='utf-8') as f:
+            f.write('\\n'.join(content))
+        
+        print(f"File saved: shanxi-multicast.m3u")
+        print(f"Total lines: {len(content)}")
+    else:
+        print(f"HTTP error: {r.status_code}")
+        exit(1)
+        
+except Exception as e:
+    print(f"Error: {e}")
+    exit(1)
+PY_EOF
+        
+        # 运行脚本
+        python3 /tmp/update.py
+        
+    - name: Check result
+      run: |
+        if [ -f "shanxi-multicast.m3u" ]; then
+          echo "✅ Success!"
+          echo "File preview:"
+          head -10 shanxi-multicast.m3u
+        else
+          echo "❌ Failed to create file"
+          exit 1
+        fi                        for line in r.text.split('\\n'):
+                            line = line.strip()
+                            if line and not line.startswith('#EXTM3U'):
+                                content.append(line)
+                        content.append('')
+                        print(f'成功处理链接 {i+1}')
+                    else:
+                        print(f'失败: {r.status_code}')
+                        
+                except Exception as e:
+                    print(f'错误: {e}')
+            
+            with open('shanxi-multicast.m3u', 'w', encoding='utf-8') as f:
+                f.write('\\n'.join(content))
+            
+            print('更新完成')
+        else:
+            print('未找到链接')
+    else:
+        print(f'HTTP错误: {response.status_code}')
+        
+except Exception as e:
+    print(f'执行错误: {e}')
+    exit(1)
+"
+        
+    - name: Check result
+      run: |
+        if [ -f "shanxi-multicast.m3u" ]; then
+          echo "文件已创建"
+          echo "=== 预览 ==="
+          head -15 shanxi-multicast.m3u
+          echo "=== 统计 ==="
+          echo "行数: $(wc -l < shanxi-multicast.m3u)"
+        else
+          echo "文件未创建"
+          exit 1
+        fi
+        
+    - name: Commit changes
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        
+        if git diff --quiet shanxi-multicast.m3u 2>/dev/null; then
+          echo "没有变化"
+        else
+          git add shanxi-multicast.m3u
+          git commit -m "更新山西组播源 $(date '+%Y-%m-%d %H:%M:%S')"
+          git push origin main
+        fi
