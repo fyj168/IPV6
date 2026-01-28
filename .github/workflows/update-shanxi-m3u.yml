@@ -21,9 +21,9 @@ jobs:
         python -m pip install --upgrade pip
         pip install requests
         
-    - name: Create and run Python script
-      run: |
-        cat > update.py << 'EOF'
+    - name: Update Shanxi multicast sources
+  run: |
+    python update_shanxi.py
 import requests
 import re
 from datetime import datetime
