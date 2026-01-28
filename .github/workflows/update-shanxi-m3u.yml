@@ -1,0 +1,166 @@
+name: Update Shanxi Multicast Sources
+
+on:
+  schedule:
+    # 每12小时运行一次
+    - cron: '0 */12 * * *'
+  workflow_dispatch:  # 允许手动触发
+  push:
+    branches:
+      - main
+
+jobs:
+  update-m3u:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+      with:
+        persist-credentials: false
+        
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+        
+    - name: Install dependencies
+      run: |
+        pip install requests beautifulsoup4
+        
+    - name: Update Shanxi multicast sources
+      env:
+        SOURCE_URL: "https://my9.ltd/tvsh/"
+      run: |
+        python -c "
+import requests
+import re
+from datetime import datetime
+import os
+
+print('开始获取山西组播源...')
+source_url = '${{ env.SOURCE_URL }}'
+
+try:
+    # 发送请求获取页面内容
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    }
+    
+    response = requests.get(source_url, headers=headers, timeout=30)
+    response.encoding = 'utf-8'
+    
+    if response.status_code == 200:
+        print('成功获取页面内容')
+        
+        # 查找m3u文件链接 - 根据网站实际情况调整选择器
+        m3u_links = re.findall(r'href=[\'"]([^\'"]+\.m3u[^\'"]*)[\'"]', response.text)
+        m3u_links += re.findall(r'href=[\'"]([^\'"]+\.txt[^\'"]*)[\'"]', response.text)
+        
+        if m3u_links:
+            print(f'找到 {len(m3u_links)} 个可能的m3u/txt链接')
+            
+            # 过滤出山西相关的链接
+            shanxi_links = []
+            for link in m3u_links:
+                if any(keyword in link.lower() for keyword in ['sx', 'shanxi', '山西', 'sx', 'tvsh']):
+                    shanxi_links.append(link)
+                    
+            if not shanxi_links:
+                # 如果没有明确的山西链接，尝试获取所有链接
+                print('未找到明确的山西链接，尝试获取所有链接...')
+                shanxi_links = m3u_links[:5]  # 限制数量
+            
+            # 处理相对链接
+            base_url = '/'.join(source_url.split('/')[:-1])
+            full_links = []
+            for link in shanxi_links:
+                if link.startswith('http'):
+                    full_links.append(link)
+                elif link.startswith('/'):
+                    full_links.append(f'{source_url.split("/")[0]}//{source_url.split("/")[2]}{link}')
+                else:
+                    full_links.append(f'{base_url}/{link}')
+            
+            # 下载并合并内容
+            all_content = []
+            timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            all_content.append(f'#EXTM3U')
+            all_content.append(f'# 山西组播源')
+            all_content.append(f'# 更新时间: {timestamp}')
+            all_content.append(f'# 来源: {source_url}')
+            all_content.append('')
+            
+            for i, full_link in enumerate(full_links[:3]):  # 限制前3个链接
+                try:
+                    print(f'正在下载: {full_link}')
+                    m3u_response = requests.get(full_link, headers=headers, timeout=30)
+                    
+                    if m3u_response.status_code == 200:
+                        content = m3u_response.text
+                        
+                        # 处理m3u内容
+                        lines = content.split('\n')
+                        for line in lines:
+                            if line.strip() and not line.strip().startswith('#EXTM3U'):
+                                all_content.append(line)
+                        
+                        print(f'成功处理链接 {i+1}')
+                        all_content.append('')
+                    else:
+                        print(f'下载失败 {full_link}: 状态码 {m3u_response.status_code}')
+                        
+                except Exception as e:
+                    print(f'处理链接 {full_link} 时出错: {str(e)}')
+            
+            # 保存到文件
+            output_content = '\n'.join(all_content)
+            with open('shanxi-multicast.m3u', 'w', encoding='utf-8') as f:
+                f.write(output_content)
+            
+            print('山西组播源已更新并保存到 shanxi-multicast.m3u')
+            
+        else:
+            print('未找到m3u/txt链接，尝试直接提取频道信息...')
+            # 这里可以添加更复杂的提取逻辑
+            
+    else:
+        print(f'获取页面失败: 状态码 {response.status_code}')
+        
+except Exception as e:
+    print(f'执行过程中出错: {str(e)}')
+    import traceback
+    traceback.print_exc()
+"
+        
+    - name: Check if file was created
+      run: |
+        if [ -f "shanxi-multicast.m3u" ]; then
+          echo "文件已创建，内容预览："
+          head -20 shanxi-multicast.m3u
+          echo "..."
+          echo "文件大小：" $(wc -l < shanxi-multicast.m3u) "行"
+        else
+          echo "文件未创建"
+          exit 1
+        fi
+        
+    - name: Commit and push changes
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        
+        if git diff --quiet; then
+          echo "没有检测到文件变化"
+        else
+          git add shanxi-multicast.m3u
+          git commit -m "更新山西组播源 - $(date +'%Y-%m-%d %H:%M:%S')"
+          git push origin main
+          echo "已提交并推送更改"
+        fi
+        
+    - name: Create backup
+      run: |
+        timestamp=$(date +'%Y%m%d_%H%M%S')
+        cp shanxi-multicast.m3u "shanxi-multicast_${timestamp}.m3u"
+        echo "已创建备份文件: shanxi-multicast_${timestamp}.m3u"
