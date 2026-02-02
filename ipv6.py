@@ -1,7 +1,10 @@
 import requests
 import re
+import socket
+import time
 from collections import defaultdict
 from datetime import datetime, timedelta
+import urllib.parse
 
 # -------------------------
 # 频道分类（正规区域）
@@ -97,6 +100,336 @@ CHANNEL_MAPPING = {
     "iHOT爱喜剧": ["iHOT 爱喜剧", "IHOT 爱喜剧", "IHOT爱喜剧", "ihot爱喜剧", "爱喜剧", "ihot 爱喜剧"],
     "iHOT爱科幻": ["iHOT 爱科幻", "IHOT 爱科幻", "IHOT爱科幻", "ihot爱科幻", "爱科幻", "ihot 爱科幻"],
     "iHOT爱院线": ["iHOT 爱院线", "IHOT 爱院线", "IHOT爱院线", "ihot爱院线", "ihot 爱院线", "爱院线"],
+    "iHOT爱悬疑": ["iHOT 爱悬疑", "IHOT 爱悬疑", "IHOT爱悬疑", "ihot爱悬疑", "ihot 爱悬疑", "爱悬疑"],
+    "iHOT爱历史": ["iHOT 爱历史", "IHOT 爱历史", "IHOT爱历史", "ihot爱历史", "ihot 爱历史", "爱历史"],
+    "iHOT爱谍战": ["iHOT 爱谍战", "IHOT 爱谍战", "IHOT爱谍战", "ihot爱谍战", "ihot 爱谍战", "爱谍战"],
+    "iHOT爱旅行": ["iHOT 爱旅行", "IHOT 爱旅行", "IHOT爱旅行", "ihot爱旅行", "ihot 爱旅行", "爱旅行"],
+    "iHOT爱幼教": ["iHOT 爱幼教", "IHOT 爱幼教", "IHOT爱幼教", "ihot爱幼教", "ihot 爱幼教", "爱幼教"],
+    "iHOT爱玩具": ["iHOT 爱玩具", "IHOT 爱玩具", "IHOT爱玩具", "ihot爱玩具", "ihot 爱玩具", "爱玩具"],
+    "iHOT爱体育": ["iHOT 爱体育", "IHOT 爱体育", "IHOT爱体育", "ihot爱体育", "ihot 爱体育", "爱体育"],
+    "iHOT爱赛车": ["iHOT 爱赛车", "IHOT 爱赛车", "IHOT爱赛车", "ihot爱赛车", "ihot 爱赛车", "爱赛车"],
+    "iHOT爱浪漫": ["iHOT 爱浪漫", "IHOT 爱浪漫", "IHOT爱浪漫", "ihot爱浪漫", "ihot 爱浪漫", "爱浪漫"],
+    "iHOT爱奇谈": ["iHOT 爱奇谈", "IHOT 爱奇谈", "IHOT爱奇谈", "ihot爱奇谈", "ihot 爱奇谈", "爱奇谈"],
+    "iHOT爱科学": ["iHOT 爱科学", "IHOT 爱科学", "IHOT爱科学", "ihot爱科学", "ihot 爱科学", "爱科学"],
+    "iHOT爱动漫": ["iHOT 爱动漫", "IHOT 爱动漫", "IHOT爱动漫", "ihot爱动漫", "ihot 爱动漫", "爱动漫"],
+    "东北热剧": ["NewTV东北热剧", "NewTV 东北热剧", "newtv 东北热剧", "NEWTV 东北热剧", "NEWTV东北热剧"],
+    "中国功夫": ["NewTV中国功夫", "NewTV 中国功夫", "newtv 中国功夫", "NEWTV 中国功夫", "NEWTV中国功夫"],
+    "动作电影": ["NewTV动作电影", "NewTV 动作电影", "newtv 动作电影", "NEWTV 动作电影", "NEWTV动作电影"],
+    "军事评论": ["NewTV军事评论", "NewTV 军事评论", "newtv 军事评论", "NEWTV 军事评论", "NEWTV军事评论"],
+    "军旅剧场": ["NewTV军旅剧场", "NewTV 军旅剧场", "newtv 军旅剧场", "NEWTV 军旅剧场", "NEWTV军旅剧场"],
+    "魅力潇湘": ["NewTV魅力潇湘", "NewTV 魅力潇湘", "newtv 魅力潇湘", "NEWTV 魅力潇湘", "NEWTV魅力潇湘"],
+    "古装剧场": ["NewTV古装剧场", "NewTV 古装剧场", "newtv 古装剧场", "NEWTV 古装剧场", "NEWTV古装剧场"],
+    "家庭剧场": ["NewTV家庭剧场", "NewTV 家庭剧场", "newtv 家庭剧场", "NEWTV 家庭剧场", "NEWTV家庭剧场"],
+    "惊悚悬疑": ["NewTV惊悚悬疑", "NewTV 惊悚悬疑", "newtv 惊悚悬疑", "NEWTV 惊悚悬疑", "NEWTV惊悚悬疑"],
+    "明星大片": ["NewTV明星大片", "NewTV 明星大片", "newtv 明星大片", "NEWTV 明星大片", "NEWTV明星大片"],
+    "欢乐剧场": ["NewTV欢乐剧场", "NewTV 欢乐剧场", "newtv 欢乐剧场", "NEWTV 欢乐剧场", "NEWTV欢乐剧场"],
+    "海外剧场": ["NewTV海外剧场", "NewTV 海外剧场", "newtv 海外剧场", "NEWTV 海外剧场", "NEWTV海外剧场"],
+    "潮妈辣婆": ["NewTV潮妈辣婆", "NewTV 潮妈辣婆", "newtv 潮妈辣婆", "NEWTV 潮妈辣婆", "NEWTV潮妈辣婆"],
+    "爱情喜剧": ["NewTV爱情喜剧", "NewTV 爱情喜剧", "newtv 爱情喜剧", "NEWTV 爱情喜剧", "NEWTV爱情喜剧"],
+    "炫舞未来": ["NewTV炫舞未来", "NewTV 炫舞未来", "newtv 炫舞未来", "NEWTV 炫舞未来", "NEWTV炫舞未来"],
+    "精品体育": ["NewTV精品体育", "NewTV 精品体育", "newtv 精品体育", "NEWTV 精品体育", "NEWTV精品体育"],
+    "精品大剧": ["NewTV精品大剧", "NewTV 精品大剧", "newtv 精品大剧", "NEWTV 精品大剧", "NEWTV精品大剧"],
+    "精品纪录": ["NewTV精品纪录", "NewTV 精品纪录", "newtv 精品纪录", "NEWTV 精品纪录", "NEWTV精品纪录"],
+    "精品萌宠": ["NewTV精品萌宠", "NewTV 精品萌宠", "newtv 精品萌宠", "NEWTV 精品萌宠", "NEWTV精品萌宠"],
+    "超级体育": ["NewTV超级体育", "NewTV 超级体育", "newtv 超级体育", "NEWTV 超级体育", "NEWTV超级体育"],
+    "超级电影": ["NewTV超级电影", "NewTV 超级电影", "newtv 超级电影", "NEWTV 超级电影", "NEWTV超级电影"],
+    "怡伴健康": ["NewTV怡伴健康", "NewTV 怡伴健康", "newtv 怡伴健康", "NEWTV 怡伴健康", "NEWTV怡伴健康"],
+    "超级电视剧": ["NewTV超级电视剧", "NewTV 超级电视剧", "newtv 超级电视剧", "NEWTV 超级电视剧", "NEWTV超级电视剧"],
+    "超级综艺": ["NewTV超级综艺", "NewTV 超级综艺", "newtv 超级综艺", "NEWTV 超级综艺", "NEWTV超级综艺"],
+    "金牌综艺": ["NewTV金牌综艺", "NewTV 金牌综艺", "newtv 金牌综艺", "NEWTV 金牌综艺", "NEWTV金牌综艺"],
+    "武搏世界": ["NewTV武搏世界", "NewTV 武搏世界", "newtv 武搏世界", "NEWTV 武搏世界", "NEWTV武搏世界"],
+    "农业致富": ["NewTV农业致富", "NewTV 农业致富", "newtv 农业致富", "NEWTV 农业致富", "NEWTV农业致富"],
+}
+
+# -------------------------
+# 新增：多个IPv6直播源列表
+# -------------------------
+IPV6_SOURCE_URLS = [
+    # 公开的IPv6直播源（请根据实际情况调整）
+    "https://raw.githubusercontent.com/kakaxi-1/IPTV/main/ipv6.m3u",
+    "https://raw.githubusercontent.com/fanmingming/live/main/tv/m3u/ipv6.m3u",
+    "https://raw.githubusercontent.com/YanG-1989/m3u/main/China.m3u",
+    "https://raw.githubusercontent.com/ssili126/tv/main/itvlist.txt",
+    "https://raw.githubusercontent.com/zhanghong1983/TVBOXZY/main/tvlive.txt",
+    "https://raw.githubusercontent.com/imDazui/Tvlist-awesome-m3u-m3u8/master/m3u/%E5%85%A8%E5%9B%BD%E5%90%84%E5%9C%B0IPTV%E6%B5%81%E5%AA%92%E4%BD%93%E6%BA%90.m3u",
+    "https://raw.githubusercontent.com/Kimentanm/aptv/master/m3u/iptv.m3u",
+    "https://iptv-org.github.io/iptv/index.nsfw.m3u",
+    "https://raw.githubusercontent.com/iptv-org/iptv/master/streams/cn.m3u",
+]
+
+# -------------------------
+# 正则表达式
+# -------------------------
+ipv6_regex = r"(?:http|rtsp|rtmp)://\[[0-9a-fA-F:]+\](?::\d+)?/.*"  # 匹配 IPv6 地址
+
+def normalize_channel_name(name: str) -> str:
+    """根据别名映射表统一频道名称"""
+    for standard, aliases in CHANNEL_MAPPING.items():
+        if name == standard or name in aliases:
+            return standard
+    return name
+
+def is_invalid_url(url: str) -> bool:
+    """检查是否为无效 URL（可扩展过滤规则）"""
+    hlj = r"http://\[[a-fA-F0-9:]+\](?::\d+)?/ottrrs\.hl\.chinamobile\.com/.+/.+" # 黑龙江移动V6
+    hlj1 = r"http://\[2409:8087:1a01:df::7005\]/.*"# 黑龙江移动V6
+
+    if re.match(hlj, url) or re.match(hlj1, url):
+        return True
+
+    return False
+
+def is_valid_ipv6_url(url: str) -> bool:
+    """验证是否是有效的IPv6 URL"""
+    try:
+        # 检查是否匹配IPv6格式
+        if not re.match(ipv6_regex, url):
+            return False
+        
+        # 检查是否是无效URL
+        if is_invalid_url(url):
+            return False
+            
+        # 解析URL
+        parsed = urllib.parse.urlparse(url)
+        
+        # 确保主机名是IPv6地址（包含方括号）
+        if '[' not in parsed.netloc or ']' not in parsed.netloc:
+            return False
+            
+        # 提取IPv6地址部分
+        ipv6_match = re.search(r'\[([0-9a-fA-F:]+)\]', parsed.netloc)
+        if not ipv6_match:
+            return False
+            
+        ipv6_addr = ipv6_match.group(1)
+        
+        # 简单的IPv6格式验证
+        # 检查是否有足够的分号
+        if ipv6_addr.count(':') < 2:
+            return False
+            
+        # 检查是否是保留地址
+        if ipv6_addr.startswith('fe80:'):  # 链路本地地址
+            return False
+        if ipv6_addr.startswith('fc00:'):  # 唯一本地地址
+            return False
+        if ipv6_addr.startswith('fd00:'):  # 唯一本地地址
+            return False
+        if ipv6_addr == '::1':  # 本地回环
+            return False
+            
+        return True
+    except Exception:
+        return False
+
+def test_ipv6_connectivity():
+    """测试IPv6连接性"""
+    try:
+        # 测试访问IPv6网站
+        response = requests.get("https://ipv6.google.com", timeout=5, verify=False)
+        return response.status_code == 200
+    except:
+        try:
+            # 尝试另一个IPv6测试站点
+            response = requests.get("http://ipv6.test-ipv6.com/", timeout=5)
+            return response.status_code == 200
+        except:
+            return False
+
+def fetch_lines(url: str):
+    """下载并分行返回内容"""
+    try:
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+        resp = requests.get(url, timeout=15, headers=headers, verify=False)
+        resp.encoding = "utf-8"
+        print(f"✅ 成功获取: {url} ({len(resp.text)} 字符)")
+        return resp.text.splitlines()
+    except Exception as e:
+        print(f"❌ 获取失败 {url}: {e}")
+        return []
+
+def parse_lines(lines, source_url=""):
+    """解析 M3U 或 TXT 内容，返回 {频道名: [url列表]}"""
+    channels_dict = defaultdict(list)
+    current_name = None
+    url_count = 0
+    ipv6_url_count = 0
+
+    for i, line in enumerate(lines):
+        line = line.strip()
+        if not line:
+            continue
+
+        # M3U #EXTINF 格式
+        if line.startswith("#EXTINF"):
+            if "," in line:
+                current_name = line.split(",")[-1].strip()
+            if i + 1 < len(lines):
+                url = lines[i + 1].strip()
+                url = url.split("$")[0].strip()  # 去掉 $ 后缀
+                url_count += 1
+                if is_valid_ipv6_url(url):
+                    norm_name = normalize_channel_name(current_name)
+                    channels_dict[norm_name].append(url)
+                    ipv6_url_count += 1
+
+        # TXT 频道名,URL 格式
+        elif "," in line:
+            parts = line.split(",", 1)
+            if len(parts) == 2:
+                ch_name, url = parts[0].strip(), parts[1].strip()
+                url = url.split("$")[0].strip()  # 去掉 $ 后缀
+                url_count += 1
+                if is_valid_ipv6_url(url):
+                    norm_name = normalize_channel_name(ch_name)
+                    channels_dict[norm_name].append(url)
+                    ipv6_url_count += 1
+
+        # 尝试从普通文本中提取URL
+        elif "http" in line:
+            # 尝试匹配各种格式的URL
+            url_patterns = [
+                r'(http[^\s]+\[?[a-fA-F0-9:]+\]?[^\s]*)',
+                r'(rtsp[^\s]+\[?[a-fA-F0-9:]+\]?[^\s]*)',
+                r'(rtmp[^\s]+\[?[a-fA-F0-9:]+\]?[^\s]*)',
+            ]
+            for pattern in url_patterns:
+                matches = re.findall(pattern, line)
+                for url in matches:
+                    url_count += 1
+                    if is_valid_ipv6_url(url):
+                        # 尝试从行中提取频道名
+                        ch_name_match = re.search(r'([^,#\n]+?)(?:,|\s+?)(?=http)', line)
+                        if ch_name_match:
+                            ch_name = ch_name_match.group(1).strip()
+                        else:
+                            ch_name = f"Channel_{len(channels_dict)+1}"
+                        norm_name = normalize_channel_name(ch_name)
+                        channels_dict[norm_name].append(url)
+                        ipv6_url_count += 1
+
+    if source_url:
+        print(f"  从 {source_url} 解析: {url_count} 个URL, 其中 {ipv6_url_count} 个IPv6地址")
+    
+    return channels_dict
+
+def verify_stream(url, timeout=3):
+    """快速验证流是否可用"""
+    try:
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Range': 'bytes=0-1024'  # 只请求少量数据
+        }
+        response = requests.head(url, headers=headers, timeout=timeout, verify=False, allow_redirects=True)
+        
+        if response.status_code in [200, 206]:
+            content_type = response.headers.get('Content-Type', '').lower()
+            if any(x in content_type for x in ['video', 'audio', 'application/octet-stream', 'binary']):
+                return True
+    except requests.exceptions.Timeout:
+        # 超时可能意味着服务器响应慢，但不一定不可用
+        return True
+    except Exception:
+        pass
+    
+    return False
+
+def create_m3u_file(all_channels, filename="ipv6.m3u"):
+    """生成带分类的 M3U 文件，一频道多源连续写"""
+    total_channels = 0
+    total_urls = 0
+    
+    with open(filename, "w", encoding="utf-8") as f:
+        f.write('#EXTM3U x-tvg-url="https://kakaxi-1.github.io/IPTV/epg.xml"\n\n')
+        for group, channel_list in CHANNEL_CATEGORIES.items():
+            group_channels = 0
+            for ch in channel_list:
+                if ch in all_channels and all_channels[ch]:
+                    # 去重 URL，保留顺序
+                    unique_urls = list(dict.fromkeys(all_channels[ch]))
+                    
+                    # 可选：验证URL可用性
+                    valid_urls = []
+                    for url in unique_urls:
+                        if verify_stream(url):
+                            valid_urls.append(url)
+                        else:
+                            print(f"⚠️  跳过不可用URL: {url}")
+                    
+                    if valid_urls:
+                        logo = f"https://kakaxi-1.github.io/IPTV/LOGO/{ch}.png"
+                        f.write(f'#EXTINF:-1 tvg-name="{ch}" tvg-logo="{logo}" group-title="{group}",{ch}\n')
+                        for url in valid_urls:
+                            f.write(f"{url}\n")
+                        total_channels += 1
+                        total_urls += len(valid_urls)
+                        group_channels += 1
+            
+            print(f"📺 {group}: {group_channels} 个频道")
+    
+    print(f"\n📊 总计: {total_channels} 个频道, {total_urls} 个有效IPv6源")
+    return total_channels, total_urls
+
+def main():
+    print("🌐 IPv6直播源收集器")
+    print("=" * 50)
+    
+    # 测试IPv6连接
+    print("测试IPv6连接性...")
+    if test_ipv6_connectivity():
+        print("✅ IPv6连接正常")
+    else:
+        print("⚠️  IPv6连接可能有问题，但将继续尝试抓取")
+    
+    all_channels = defaultdict(list)
+    successful_sources = 0
+    
+    print(f"\n开始从 {len(IPV6_SOURCE_URLS)} 个源抓取数据...")
+    
+    for url in IPV6_SOURCE_URLS:
+        print(f"\n处理源: {url}")
+        lines = fetch_lines(url)
+        if lines:
+            parsed = parse_lines(lines, url)
+            if parsed:
+                for ch, urls_list in parsed.items():
+                    all_channels[ch].extend(urls_list)
+                successful_sources += 1
+                print(f"  找到 {len(parsed)} 个频道的IPv6地址")
+    
+    print(f"\n✅ 从 {successful_sources}/{len(IPV6_SOURCE_URLS)} 个源成功获取数据")
+    
+    if not all_channels:
+        print("❌ 没有找到任何IPv6直播源")
+        return
+    
+    # 统计去重前的数据
+    total_urls_before = sum(len(urls) for urls in all_channels.values())
+    print(f"去重前: {len(all_channels)} 个频道, {total_urls_before} 个URL")
+    
+    # 生成M3U文件
+    total_channels, total_urls = create_m3u_file(all_channels)
+    
+    if total_channels > 0:
+        print(f"\n✅ 已生成 ipv6.m3u，包含 {total_channels} 个频道, {total_urls} 个IPv6源")
+        
+        # 显示前10个频道作为示例
+        print("\n📺 部分频道示例:")
+        count = 0
+        for ch in list(all_channels.keys())[:10]:
+            if ch in all_channels and all_channels[ch]:
+                print(f"  {ch}: {len(all_channels[ch])} 个源")
+                count += 1
+                if count >= 5:
+                    break
+    else:
+        print("❌ 没有有效的IPv6直播源，无法生成文件")
+
+if __name__ == "__main__":
+    main()    "iHOT爱院线": ["iHOT 爱院线", "IHOT 爱院线", "IHOT爱院线", "ihot爱院线", "ihot 爱院线", "爱院线"],
     "iHOT爱悬疑": ["iHOT 爱悬疑", "IHOT 爱悬疑", "IHOT爱悬疑", "ihot爱悬疑", "ihot 爱悬疑", "爱悬疑"],
     "iHOT爱历史": ["iHOT 爱历史", "IHOT 爱历史", "IHOT爱历史", "ihot爱历史", "ihot 爱历史", "爱历史"],
     "iHOT爱谍战": ["iHOT 爱谍战", "IHOT 爱谍战", "IHOT爱谍战", "ihot爱谍战", "ihot 爱谍战", "爱谍战"],
@@ -254,4 +587,5 @@ def main():
     print(f"✅ 已生成 ipv6.m3u，频道数: {len(all_channels)}")
 
 if __name__ == "__main__":
+
     main()
